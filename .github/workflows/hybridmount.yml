@@ -35,7 +35,7 @@ jobs:
       run: |
         # Cambia TAG con il tag della release di Hybrid Mount installata sul telefono
         # (dalle Releases del repo). "dev" = ultima versione del branch di sviluppo.
-        TAG="main"
+        TAG="dev"
         curl -fLSs "https://raw.githubusercontent.com/Hybrid-Mount/meta-hybrid_mount/$TAG/module/vfs/setup.sh" -o /tmp/setup.sh
         sed -i "s#meta-hybrid_mount/dev/#meta-hybrid_mount/$TAG/#" /tmp/setup.sh
         sh /tmp/setup.sh
