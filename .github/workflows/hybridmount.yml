@@ -11,9 +11,15 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
-        ref: v7
+        ref: rebased-11
         fetch-depth: 0
-        submodules: recursive
+
+    - name: Passa al tag v7 dell'upstream
+      run: |
+        git fetch https://github.com/xfwdrev/android_kernel_samsung_ex2100.git refs/tags/v7:refs/tags/v7
+        git checkout v7
+        git submodule update --init --recursive
+        git log -1 --format=%H
 
     - name: Update apt
       run: sudo apt-get update
@@ -27,31 +33,8 @@ jobs:
 
     - name: Aggiungi sorgenti hybridmount e abilita come modulo
       run: |
-        curl -LSs "https://raw.githubusercontent.com/Hybrid-Mount/meta-hybrid_mount/dev/module/vfs/setup.sh" | bash
-        ls fs/hybridmount
-        shopt -s nullglob
-        cfgs=(arch/arm64/configs/*o1s*)
-        [ ${#cfgs[@]} -gt 0 ] || { echo "Nessuna defconfig o1s trovata"; exit 1; }
-        for f in "${cfgs[@]}"; do
-          echo "CONFIG_HYBRIDMOUNT=m" >> "$f"
-          echo "Aggiunto a $f"
-        done
-
-    - name: Run kernel build
-      run: |
-        chmod +x ./build.sh
-        ./build.sh -m o1s
-
-    - name: Raccogli il .ko
-      run: |
-        find . -name 'hybridmount*.ko' -print
-        KO=$(find . -name 'hybridmount*.ko' | head -n1)
-        [ -n "$KO" ] || { echo "Nessun .ko trovato: build.sh non compila i moduli?"; exit 1; }
-        mkdir -p ko && cp "$KO" ko/
-        modinfo ko/*.ko | grep -E 'vermagic|depends|description'
-
-    - name: Upload .ko
-      uses: actions/upload-artifact@v4
-      with:
-        name: hybridmount-ko
-        path: ko/*.ko
+        # Cambia TAG con il tag della release di Hybrid Mount installata sul telefono
+        # (dalle Releases del repo). "dev" = ultima versione del branch di sviluppo.
+        TAG="main"
+        curl -fLSs "https://raw.githubusercontent.com/Hybrid-Mount/meta-hybrid_mount/$TAG/module/vfs/setup.sh" -o /tmp/setup.sh
+        sed -i "s#meta-hybrid_mount/dev/#meta-hybrid_mount/$TAG/#" /tmp/setup.sh
