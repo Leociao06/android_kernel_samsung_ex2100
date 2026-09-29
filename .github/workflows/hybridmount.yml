@@ -66,7 +66,7 @@ jobs:
         sed -i "s#meta-hybrid_mount/dev/#meta-hybrid_mount/$TAG/#" /tmp/setup.sh
         sh /tmp/setup.sh
         grep -n hybridmount fs/Makefile fs/Kconfig
-        echo "CONFIG_HYBRIDMOUNT=m" >> arch/arm64/configs/o1s.config
+        echo "CONFIG_HYBRIDMOUNT=y" >> arch/arm64/configs/o1s.config
 
     - name: Run kernel build
       run: |
@@ -90,18 +90,17 @@ jobs:
       run: |
         grep -H -E 'HYBRIDMOUNT|CONFIG_LOCALVERSION=' out/.config
 
-    - name: Raccogli il .ko
+    - name: Raccogli output kernel
       run: |
-        KO=build/out/o1s/modules/lib/modules/hybridmount.ko
-        [ -f "$KO" ] || KO=$(find . -name 'hybridmount*.ko' | head -n1)
-        [ -n "$KO" ] || { echo "Nessun .ko trovato"; exit 1; }
-        echo "Trovato: $KO"
-        mkdir -p ko && cp "$KO" ko/
-        modinfo ko/*.ko | grep -E 'vermagic|depends|description'
+        mkdir -p out-kernel
+        find . -maxdepth 5 -not -path './.git/*' \
+          \( -name 'boot*.img' -o -name '*.zip' -o -name 'Image' -o -name 'Image.gz*' \) \
+          -newer build.sh -exec cp -v {} out-kernel/ \;
+        ls -lh out-kernel
 
-    - name: Upload .ko
+    - name: Upload kernel
       uses: actions/upload-artifact@v4
       with:
-        name: hybridmount-ko
-        path: ko/*.ko
+        name: kernel-hybridmount
+        path: out-kernel/*
         if-no-files-found: error
