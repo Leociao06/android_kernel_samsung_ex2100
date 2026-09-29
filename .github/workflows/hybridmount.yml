@@ -31,6 +31,18 @@ jobs:
           bison binutils-dev libiberty-dev zip unzip libncurses5-dev curl git ninja-build \
           python3 libssl-dev gcc-aarch64-linux-gnu cpio gawk libarchive-tools lz4 repo
 
+    - name: Scarica toolchain LLVM da kernel.org
+      run: |
+        BASE=https://mirrors.edge.kernel.org/pub/tools/llvm/files
+        FILE=$(curl -sSL "$BASE/" | grep -o 'llvm-[0-9][0-9.]*-x86_64\.tar\.xz' | sort -uV | tail -n1)
+        [ -n "$FILE" ] || { echo "Nessun tarball trovato"; exit 1; }
+        echo "Uso $FILE"
+        curl -fSL --retry 5 --retry-delay 10 -o /tmp/llvm.tar.xz "$BASE/$FILE"
+        mkdir -p toolchain/clang-r596125
+        tar -xJf /tmp/llvm.tar.xz -C toolchain/clang-r596125 --strip-components=1
+        toolchain/clang-r596125/bin/clang --version | head -n1
+        ls toolchain/clang-r596125/bin | grep -E '^ld\.lld$'
+
     - name: Aggiungi sorgenti hybridmount e abilita come modulo
       run: |
         # Cambia TAG con il tag della release di Hybrid Mount installata sul telefono
@@ -70,3 +82,4 @@ jobs:
       with:
         name: hybridmount-ko
         path: ko/*.ko
+        if-no-files-found: error
