@@ -1,0 +1,57 @@
+name: Build hybridmount.ko
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: v7
+        fetch-depth: 0
+        submodules: recursive
+
+    - name: Update apt
+      run: sudo apt-get update
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get install -y \
+          build-essential openjdk-8-jdk maven cmake byacc flex automake libtool-bin \
+          bison binutils-dev libiberty-dev zip unzip libncurses5-dev curl git ninja-build \
+          python3 libssl-dev gcc-aarch64-linux-gnu cpio gawk libarchive-tools lz4 repo
+
+    - name: Aggiungi sorgenti hybridmount e abilita come modulo
+      run: |
+        curl -LSs "https://raw.githubusercontent.com/Hybrid-Mount/meta-hybrid_mount/dev/module/vfs/setup.sh" | bash
+        ls fs/hybridmount
+        shopt -s nullglob
+        cfgs=(arch/arm64/configs/*o1s*)
+        [ ${#cfgs[@]} -gt 0 ] || { echo "Nessuna defconfig o1s trovata"; exit 1; }
+        for f in "${cfgs[@]}"; do
+          echo "CONFIG_HYBRIDMOUNT=m" >> "$f"
+          echo "Aggiunto a $f"
+        done
+
+    - name: Run kernel build
+      run: |
+        chmod +x ./build.sh
+        ./build.sh -m o1s
+
+    - name: Raccogli il .ko
+      run: |
+        find . -name 'hybridmount*.ko' -print
+        KO=$(find . -name 'hybridmount*.ko' | head -n1)
+        [ -n "$KO" ] || { echo "Nessun .ko trovato: build.sh non compila i moduli?"; exit 1; }
+        mkdir -p ko && cp "$KO" ko/
+        modinfo ko/*.ko | grep -E 'vermagic|depends|description'
+
+    - name: Upload .ko
+      uses: actions/upload-artifact@v4
+      with:
+        name: hybridmount-ko
+        path: ko/*.ko
