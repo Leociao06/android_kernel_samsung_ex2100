@@ -50,6 +50,12 @@ jobs:
         fi
         ls -l "$CLANG_DIR/bin" | grep -E 'clang|ld\.lld'
         "$CLANG_DIR/bin/clang" --version | head -n1
+        cat > "$CLANG_DIR/bin/ld" <<EOF
+        #!/bin/sh
+        exec "$PWD/$CLANG_DIR/bin/ld.lld" "\$@"
+        EOF
+        chmod +x "$CLANG_DIR/bin/ld"
+        head -n2 "$CLANG_DIR/bin/ld"
 
     - name: Aggiungi sorgenti hybridmount e abilita come modulo
       run: |
