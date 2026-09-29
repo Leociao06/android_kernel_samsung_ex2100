@@ -65,7 +65,20 @@ jobs:
     - name: Run kernel build
       run: |
         chmod +x ./build.sh
-        ./build.sh -m o1s
+        set -o pipefail
+        ./build.sh -m o1s 2>&1 | tee build.log
+
+    - name: Mostra errori
+      if: failure()
+      run: |
+        grep -n -B3 -A6 -E "error:|Error:|\*\*\*|No rule|not found|undefined reference|Killed" build.log | grep -v HDRINST | head -120
+
+    - name: Salva log completo
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
 
     - name: Verifica config
       run: |
