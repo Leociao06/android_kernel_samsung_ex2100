@@ -38,3 +38,35 @@ jobs:
         TAG="main"
         curl -fLSs "https://raw.githubusercontent.com/Hybrid-Mount/meta-hybrid_mount/$TAG/module/vfs/setup.sh" -o /tmp/setup.sh
         sed -i "s#meta-hybrid_mount/dev/#meta-hybrid_mount/$TAG/#" /tmp/setup.sh
+        sh /tmp/setup.sh
+        grep -n hybridmount fs/Makefile fs/Kconfig
+        shopt -s nullglob
+        cfgs=(arch/arm64/configs/*o1s*)
+        [ ${#cfgs[@]} -gt 0 ] || { echo "Nessuna defconfig o1s trovata"; exit 1; }
+        for f in "${cfgs[@]}"; do
+          echo "CONFIG_HYBRIDMOUNT=m" >> "$f"
+          echo "Aggiunto a $f"
+        done
+
+    - name: Run kernel build
+      run: |
+        chmod +x ./build.sh
+        ./build.sh -m o1s
+
+    - name: Verifica config
+      run: |
+        find . -name .config -path '*out*' -exec grep -H HYBRIDMOUNT {} \;
+
+    - name: Raccogli il .ko
+      run: |
+        find . -name 'hybridmount*.ko' -print
+        KO=$(find . -name 'hybridmount*.ko' | head -n1)
+        [ -n "$KO" ] || { echo "Nessun .ko trovato: build.sh non compila i moduli?"; exit 1; }
+        mkdir -p ko && cp "$KO" ko/
+        modinfo ko/*.ko | grep -E 'vermagic|depends|description'
+
+    - name: Upload .ko
+      uses: actions/upload-artifact@v4
+      with:
+        name: hybridmount-ko
+        path: ko/*.ko
