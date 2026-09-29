@@ -31,17 +31,25 @@ jobs:
           bison binutils-dev libiberty-dev zip unzip libncurses5-dev curl git ninja-build \
           python3 libssl-dev gcc-aarch64-linux-gnu cpio gawk libarchive-tools lz4 repo
 
-    - name: Scarica toolchain LLVM da kernel.org
+    - name: Scarica toolchain LLVM da kernel.org (letto da build.sh)
       run: |
+        CLANG_DIR=$(grep -oE 'toolchain/clang-r[0-9a-z]+' build.sh | head -n1)
+        CLANG_MAJOR=$(grep -oE 'bin/clang-[0-9]+' build.sh | head -n1 | grep -oE '[0-9]+$' || true)
+        echo "build.sh vuole: dir=$CLANG_DIR major=$CLANG_MAJOR"
+        [ -n "$CLANG_DIR" ] || { echo "Impossibile leggere la cartella toolchain da build.sh"; exit 1; }
+        MAJ=${CLANG_MAJOR:-[0-9]+}
         BASE=https://mirrors.edge.kernel.org/pub/tools/llvm/files
-        FILE=$(curl -sSL "$BASE/" | grep -o 'llvm-[0-9][0-9.]*-x86_64\.tar\.xz' | sort -uV | tail -n1)
-        [ -n "$FILE" ] || { echo "Nessun tarball trovato"; exit 1; }
+        FILE=$(curl -sSL "$BASE/" | grep -oE "llvm-${MAJ}\.[0-9.]+-x86_64\.tar\.xz" | sort -uV | tail -n1)
+        [ -n "$FILE" ] || { echo "Nessun tarball LLVM $MAJ trovato su kernel.org"; exit 1; }
         echo "Uso $FILE"
         curl -fSL --retry 5 --retry-delay 10 -o /tmp/llvm.tar.xz "$BASE/$FILE"
-        mkdir -p toolchain/clang-r596125
-        tar -xJf /tmp/llvm.tar.xz -C toolchain/clang-r596125 --strip-components=1
-        toolchain/clang-r596125/bin/clang --version | head -n1
-        ls toolchain/clang-r596125/bin | grep -E '^ld\.lld$'
+        mkdir -p "$CLANG_DIR"
+        tar -xJf /tmp/llvm.tar.xz -C "$CLANG_DIR" --strip-components=1
+        if [ -n "$CLANG_MAJOR" ] && [ ! -e "$CLANG_DIR/bin/clang-$CLANG_MAJOR" ]; then
+          ln -s clang "$CLANG_DIR/bin/clang-$CLANG_MAJOR"
+        fi
+        ls -l "$CLANG_DIR/bin" | grep -E 'clang|ld\.lld'
+        "$CLANG_DIR/bin/clang" --version | head -n1
 
     - name: Aggiungi sorgenti hybridmount e abilita come modulo
       run: |
@@ -52,13 +60,7 @@ jobs:
         sed -i "s#meta-hybrid_mount/dev/#meta-hybrid_mount/$TAG/#" /tmp/setup.sh
         sh /tmp/setup.sh
         grep -n hybridmount fs/Makefile fs/Kconfig
-        shopt -s nullglob
-        cfgs=(arch/arm64/configs/*o1s*)
-        [ ${#cfgs[@]} -gt 0 ] || { echo "Nessuna defconfig o1s trovata"; exit 1; }
-        for f in "${cfgs[@]}"; do
-          echo "CONFIG_HYBRIDMOUNT=m" >> "$f"
-          echo "Aggiunto a $f"
-        done
+        echo "CONFIG_HYBRIDMOUNT=m" >> arch/arm64/configs/o1s.config
 
     - name: Run kernel build
       run: |
@@ -67,13 +69,14 @@ jobs:
 
     - name: Verifica config
       run: |
-        find . -name .config -path '*out*' -exec grep -H HYBRIDMOUNT {} \;
+        grep -H -E 'HYBRIDMOUNT|CONFIG_LOCALVERSION=' out/.config
 
     - name: Raccogli il .ko
       run: |
-        find . -name 'hybridmount*.ko' -print
-        KO=$(find . -name 'hybridmount*.ko' | head -n1)
-        [ -n "$KO" ] || { echo "Nessun .ko trovato: build.sh non compila i moduli?"; exit 1; }
+        KO=build/out/o1s/modules/lib/modules/hybridmount.ko
+        [ -f "$KO" ] || KO=$(find . -name 'hybridmount*.ko' | head -n1)
+        [ -n "$KO" ] || { echo "Nessun .ko trovato"; exit 1; }
+        echo "Trovato: $KO"
         mkdir -p ko && cp "$KO" ko/
         modinfo ko/*.ko | grep -E 'vermagic|depends|description'
 
