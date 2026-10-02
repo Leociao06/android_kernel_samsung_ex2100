@@ -73,6 +73,21 @@ jobs:
         set -o pipefail
         ./build.sh -m ${{ github.event.inputs.model }} 2>&1 | tee build.log
 
+
+    - name: Diagnostica KSU
+      if: always()
+      run: |
+        echo "=== drivers/Kconfig / Makefile ==="
+        grep -n kernelsu drivers/Kconfig drivers/Makefile || echo "NESSUNA riga kernelsu"
+        echo "=== Kconfig di SukiSU (prime 60 righe) ==="
+        head -n 60 KernelSU/kernel/Kconfig
+        echo "=== il mio frammento è stato unito? ==="
+        grep -H -E 'EROFS_FS_PCPU_KTHREAD|SECTION_MISMATCH_WARN_ONLY' out/.config || echo "frammento NON presente in out/.config"
+        echo "=== KSU nel config finale ==="
+        grep -n -E 'KSU' out/.config || echo "nessun simbolo KSU in out/.config"
+        echo "=== messaggi kconfig nel log ==="
+        grep -n -i -E 'KSU|unmet direct|unknown|warning:.*Kconfig' build.log | head -40 || true
+
     - name: Mostra errori
       if: failure()
       run: |
