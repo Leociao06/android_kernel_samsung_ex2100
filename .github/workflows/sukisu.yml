@@ -1,0 +1,109 @@
+name: Build Kernel + SukiSU
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "Modello (o1s = S21 5G Exynos)"
+        required: true
+        default: "o1s"
+      suki_branch:
+        description: "Branch SukiSU: main (kprobes) / builtin (manual hook) / susfs-main"
+        required: true
+        default: "main"
+      hook:
+        description: "Hook method: kprobes oppure manual"
+        required: true
+        default: "kprobes"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        ref: rebased-11
+        fetch-depth: 0
+        submodules: recursive
+
+    - name: Update apt
+      run: sudo apt-get update
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get install -y \
+          build-essential openjdk-8-jdk maven cmake byacc flex automake libtool-bin \
+          bison binutils-dev libiberty-dev zip unzip libncurses5-dev curl git ninja-build \
+          python3 libssl-dev gcc-aarch64-linux-gnu cpio gawk libarchive-tools lz4 repo
+
+    - name: Integra SukiSU nei sorgenti
+      run: |
+        curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" \
+          | bash -s "${{ github.event.inputs.suki_branch }}"
+        echo "--- verifica integrazione ---"
+        ls -l drivers/kernelsu
+        [ -e drivers/kernelsu/Kconfig ] || { echo "drivers/kernelsu non punta a SukiSU"; exit 1; }
+        grep -n kernelsu drivers/Makefile drivers/Kconfig
+        echo "--- opzioni KSU disponibili ---"
+        grep -n "^config KSU" KernelSU/kernel/Kconfig
+        git -C KernelSU log -1 --format='SukiSU commit: %H'
+
+    - name: Abilita config SukiSU
+      run: |
+        CFG="arch/arm64/configs/${{ github.event.inputs.model }}.config"
+        [ -f "$CFG" ] || { echo "$CFG non esiste"; ls arch/arm64/configs | head -50; exit 1; }
+        echo "CONFIG_KSU=y" >> "$CFG"
+        if [ "${{ github.event.inputs.hook }}" = "manual" ]; then
+          echo "CONFIG_KSU_MANUAL_HOOK=y" >> "$CFG"
+        else
+          {
+            echo "# CONFIG_KSU_MANUAL_HOOK is not set"
+            echo "CONFIG_KPROBES=y"
+            echo "CONFIG_HAVE_KPROBES=y"
+            echo "CONFIG_KPROBE_EVENTS=y"
+          } >> "$CFG"
+        fi
+        tail -n 8 "$CFG"
+
+    - name: Run kernel build
+      run: |
+        chmod +x ./build.sh
+        set -o pipefail
+        ./build.sh -m ${{ github.event.inputs.model }} 2>&1 | tee build.log
+
+    - name: Mostra errori
+      if: failure()
+      run: |
+        grep -n -B3 -A6 -E "error:|Error:|\*\*\*|No rule|not found|undefined reference|Killed" build.log | grep -v HDRINST | head -150
+
+    - name: Verifica config finale
+      if: success()
+      run: |
+        grep -H -E 'CONFIG_KSU|CONFIG_KPROBES=|CONFIG_KPROBE_EVENTS|CONFIG_LOCALVERSION=' out/.config || true
+        grep -q '^CONFIG_KSU=y' out/.config || { echo "CONFIG_KSU NON attivo nel .config finale"; exit 1; }
+
+    - name: Raccogli output
+      if: success()
+      run: |
+        mkdir -p out-kernel
+        find build/out out -maxdepth 4 \
+          \( -name 'boot*.img' -o -name '*.zip' -o -name 'Image' -o -name 'Image.gz*' \) \
+          -exec cp -v {} out-kernel/ \; 2>/dev/null || true
+        ls -lh out-kernel
+
+    - name: Upload kernel
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel-${{ github.event.inputs.model }}-sukisu-${{ github.event.inputs.suki_branch }}
+        path: out-kernel/*
+        if-no-files-found: error
+
+    - name: Upload log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: build-log
+        path: build.log
